@@ -1,39 +1,27 @@
 import { defineConfig } from "vite";
 
-// @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
+// Electron loads the built files over file:// in production, so asset paths must
+// be relative rather than rooted at "/".
+export default defineConfig({
+  base: "./",
 
-// https://vite.dev/config/
-export default defineConfig(async () => ({
-  // Multi-page: include overlay.html
   build: {
+    outDir: "dist",
+    emptyOutDir: true,
     rollupOptions: {
       input: {
+        // Settings window
         main: "index.html",
-        overlay: "src/overlay.html",
+        // Always-on-top mic indicator
+        overlay: "overlay.html",
+        // Hidden window that owns microphone capture
+        recorder: "recorder.html",
       },
     },
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent Vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
-    },
   },
-}));
+});

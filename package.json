@@ -1,22 +1,54 @@
 {
-  "name": "typr",
+  "name": "typist",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "description": "Push-to-talk dictation: hold a hotkey, speak, get text pasted at the cursor",
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-global-shortcut": "^2.3.1",
-"@tauri-apps/plugin-shell": "^2.3.5"
+    "build": "npm run check && tsc && vite build",
+    "check": "node scripts/check-main.js",
+    "start": "electron .",
+    "vite": "vite",
+    "package": "npm run build && electron-builder --win --arm64",
+    "package:x64": "npm run build && electron-builder --win --x64",
+    "package:trial": "npm run build && npm run package:trial:x64 && npm run package:trial:arm64",
+    "package:trial:x64": "electron-builder --win --x64 --config.win.requestedExecutionLevel=asInvoker",
+    "package:trial:arm64": "electron-builder --win --arm64 --config.win.requestedExecutionLevel=asInvoker"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.0.12",
     "typescript": "~5.6.2",
     "vite": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.typist.app",
+    "productName": "Typist",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    }
   }
 }

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Typist recorder</title>
+  </head>
+  <body>
+    <!--
+      Hidden window that owns microphone capture. getUserMedia and MediaRecorder
+      are web APIs, so capture has to live in a renderer; a dedicated window keeps
+      it alive independently of the settings window.
+    -->
+    <script type="module" src="/src/recorder.ts"></script>
+  </body>
+</html>

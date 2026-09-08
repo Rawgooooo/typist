@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Typr</title>
+    <title>Typist</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
@@ -12,6 +12,10 @@
   <body>
     <div id="app">
       <div id="titlebar" data-tauri-drag-region></div>
+      <div id="error-banner" class="hidden" role="alert" aria-live="assertive">
+        <span id="error-text"></span>
+        <button id="error-dismiss" type="button" aria-label="Dismiss message">&times;</button>
+      </div>
       <div id="app-body">
       <aside id="sidebar">
         <div class="sidebar-header">
@@ -20,7 +24,7 @@
               <rect width="18" height="18" rx="4" fill="currentColor" opacity="0.15"/>
               <path d="M5 6.5h8M5 9h5.5M5 11.5h7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
             </svg>
-            <span class="app-name">Typr</span>
+            <span class="app-name">Typist</span>
           </div>
           <div id="status-indicator">
             <span id="status-dot"></span>
@@ -48,6 +52,13 @@
             </svg>
             Recording
           </a>
+          <a class="nav-item" data-section="history">
+            <svg class="nav-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            History
+          </a>
         </nav>
         <div class="sidebar-footer">
           <span class="version-text">v0.1.0</span>
@@ -68,6 +79,15 @@
               </div>
               <div class="setting-control">
                 <select id="mic-select"></select>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Manual Recording</span>
+                <span class="label-hint">Same as the hotkey. Useful if another app has claimed it.</span>
+              </div>
+              <div class="setting-control">
+                <button id="record-btn" class="btn-primary">Record</button>
               </div>
             </div>
           </div>
@@ -106,6 +126,18 @@
                 </div>
               </div>
             </div>
+            <div class="setting-row" id="whisper-runtime-row">
+              <div class="setting-label">
+                <span class="label-text">Local Engine Runtime</span>
+                <span class="label-hint">The whisper.cpp binaries. Required before local transcription will work.</span>
+              </div>
+              <div class="setting-control">
+                <div class="model-row">
+                  <span id="runtime-status" class="runtime-status">Checking…</span>
+                  <button id="runtime-btn" class="btn-primary">Install</button>
+                </div>
+              </div>
+            </div>
             <div id="download-progress" class="hidden">
               <div id="progress-bar"><div id="progress-fill"></div></div>
             </div>
@@ -118,7 +150,68 @@
                 <input type="password" id="groq-key" placeholder="gsk_..." />
               </div>
             </div>
+            <div class="setting-row hidden" id="cloud-model-row">
+              <div class="setting-label">
+                <span class="label-text">Cloud Model</span>
+                <span class="label-hint">Large v3 is more accurate; Turbo is faster but makes more mistakes.</span>
+              </div>
+              <div class="setting-control">
+                <select id="cloud-model-select"></select>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Vocabulary Hints</span>
+                <span class="label-hint">Names, jargon and spellings you use often. Improves accuracy on unusual words.</span>
+              </div>
+              <div class="setting-control">
+                <textarea id="prompt-input" rows="3" placeholder="e.g. Kiro, Groq, Snapdragon, Raghu"></textarea>
+              </div>
+            </div>
           </div>
+        </section>
+
+        <section id="section-history" class="content-section">
+          <div class="section-header">
+            <h2 class="section-title">History</h2>
+            <p class="section-desc">Everything transcribed, newest first</p>
+          </div>
+          <div class="settings-list">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Save History</span>
+                <span class="label-hint" id="history-path-hint">Appended to history.jsonl in the data folder</span>
+              </div>
+              <div class="setting-control">
+                <div class="model-row">
+                  <div class="toggle-group">
+                    <button id="history-on" class="toggle-btn">On</button>
+                    <button id="history-off" class="toggle-btn">Off</button>
+                  </div>
+                  <button id="history-clear" class="btn-primary">Clear</button>
+                </div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Your Name or Initials</span>
+                <span class="label-hint">Stamped into the export so files can be told apart.</span>
+              </div>
+              <div class="setting-control">
+                <input type="text" id="participant-input" placeholder="e.g. AS" />
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-text">Export Corpus</span>
+                <span class="label-hint">Saves the text of every transcription to your Desktop as a single file. No audio is ever recorded.</span>
+              </div>
+              <div class="setting-control">
+                <button id="export-btn" class="btn-primary">Export to Desktop</button>
+              </div>
+            </div>
+          </div>
+          <div id="history-list"></div>
         </section>
 
         <section id="section-recording" class="content-section">
@@ -145,7 +238,7 @@
                 <span class="label-hint">Global keyboard shortcut to trigger recording</span>
               </div>
               <div class="setting-control">
-                <kbd id="hotkey-text">Cmd+Shift+D</kbd>
+                <kbd id="hotkey-text">Ctrl+Shift+D</kbd>
               </div>
             </div>
           </div>
