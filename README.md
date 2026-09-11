@@ -34,6 +34,13 @@ npm run package        # ARM64 NSIS installer
 npm run package:x64    # x64
 ```
 
+The NSIS installer is currently unreliable — see
+[Distributing for a trial](#distributing-for-a-trial). Prefer the portable ZIP.
+
+`npm run build` syntax-checks `electron/` before compiling the renderer. `tsc` and
+Vite only cover `src/`, so nothing validated the main process until a duplicate
+`const os = require("os")` shipped and crashed the packaged app on startup.
+
 Release builds request administrator rights, because Windows UIPI blocks
 synthetic keystrokes from reaching elevated windows otherwise. A manifest alone
 would prompt for UAC on every launch, so register the logon task instead — it
@@ -166,13 +173,25 @@ node electron\compare-models.js <path-to-wav>
 powershell -ExecutionPolicy Bypass -File scripts\make-trial.ps1
 ```
 
-Produces `release\Typist Setup 0.1.0.exe` — a single installer covering both x64
-and ARM64 — plus `READ-ME-FIRST.txt` for testers.
+Produces portable ZIPs in `release\` plus `READ-ME-FIRST.txt` for testers:
+
+| File | For |
+|---|---|
+| `Typist-0.1.0-win.zip` | Intel/AMD |
+| `Typist-0.1.0-arm64-win.zip` | Snapdragon / ARM |
+
+**Portable ZIP rather than the NSIS installer, deliberately.** The NSIS installer
+silently drops the seven largest files — `Typist.exe` (216 MB) and the graphics
+DLLs — while still exiting 0 and creating a Start Menu shortcut. The result is an
+"install" of 93 MB out of 366 MB and a "Missing Shortcut" dialog, with no
+Defender detection and 64 GB free. Reproduced on both the combined and per-arch
+installers. Unresolved; the ZIP sidesteps it and extracts complete (72 files,
+366.1 MB, verified against source). It also needs no install step and is removed
+by deleting one folder.
 
 Trial builds are `asInvoker` rather than `requireAdministrator`. Elevation only
 buys the ability to paste into elevated windows, and is not worth giving every
-tester a UAC prompt on each launch on top of the SmartScreen warning an unsigned
-installer already causes. Paste still works in normal applications.
+tester a UAC prompt on each launch. Paste still works in normal applications.
 
 The script scans the packaged output for a leaked API key and refuses to finish if
 it finds one. `.env` and `data/` sit outside electron-builder's file whitelist, so

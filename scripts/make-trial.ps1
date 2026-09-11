@@ -14,18 +14,18 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
-Write-Host '=== Building trial installers (x64 + arm64, no elevation) ==='
+Write-Host '=== Building portable trial builds (x64 + arm64, no elevation) ==='
 npm run package:trial
 if ($LASTEXITCODE -ne 0) { throw "electron-builder failed with exit code $LASTEXITCODE" }
 
 $releaseDir = Join-Path $repo 'release'
-$installers = Get-ChildItem $releaseDir -Filter '*.exe' -ErrorAction SilentlyContinue
+$bundles = Get-ChildItem $releaseDir -Filter '*.zip' -ErrorAction SilentlyContinue
 
-if (-not $installers) { throw "No installers found in $releaseDir" }
+if (-not $bundles) { throw "No zip bundles found in $releaseDir" }
 
 Write-Host ''
 Write-Host '=== Built ==='
-$installers | ForEach-Object { "  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB) }
+$bundles | ForEach-Object { "  {0}  ({1:N1} MB)" -f $_.Name, ($_.Length / 1MB) }
 
 # --- Secret scan -----------------------------------------------------------
 # The packaged app must never carry the developer's Groq key. `.env` and `data/`
@@ -87,13 +87,26 @@ Press a hotkey, speak, and your words get typed into whatever window you were
 using - email, chat, documents, anything.
 
 
-1. INSTALL
-   Run "Typist Setup 0.1.0.exe". One installer covers both normal (Intel/AMD)
-   and ARM machines, so there is nothing to choose.
+1. UNZIP AND RUN - there is no installer
+   a. You were sent one of these:
+        Typist-0.1.0-win.zip          (most PCs - Intel/AMD)
+        Typist-0.1.0-arm64-win.zip    (Snapdragon / ARM laptops)
+
+   b. Right-click the zip -> "Extract All..." -> pick any folder you like,
+      for example your Documents folder.
+
+      IMPORTANT: extract it first. Do not run it from inside the zip preview,
+      it will not work.
+
+   c. Open the extracted folder and run  Typist.exe
 
    Windows will warn that the publisher is unknown, because the app is not
-   code-signed. Click "More info" then "Run anyway". It installs for your user
-   only and does not ask for administrator rights.
+   code-signed. Click "More info" then "Run anyway". It does not need
+   administrator rights and it does not install anything - everything stays in
+   that one folder.
+
+   Optional: right-click Typist.exe -> "Pin to Start" or "Create shortcut" so
+   it is easier to launch.
 
 
 2. GET A FREE API KEY
@@ -144,9 +157,11 @@ WHAT IS AND IS NOT COLLECTED
    the History tab and click "Clear" - that wipes the log.
 
 
-TO STOP EARLY
-   Uninstall from Windows Settings -> Apps, or just stop using it. No hard
-   feelings, and thanks either way.
+TO STOP EARLY / REMOVE IT
+   Close Typist, then delete the folder you extracted. That is all - nothing was
+   installed anywhere else, and no registry changes were made.
+
+   No hard feelings, and thanks either way.
 '@
 
 $instructionsPath = Join-Path $releaseDir 'READ-ME-FIRST.txt'
@@ -157,4 +172,6 @@ Write-Host '=== Ready to send ==='
 Write-Host "  Folder: $releaseDir"
 Write-Host "  Instructions: $instructionsPath"
 Write-Host ''
-Write-Host 'Send each tester: their installer + READ-ME-FIRST.txt'
+Write-Host 'Send each tester: the zip for their CPU + READ-ME-FIRST.txt'
+Write-Host '  Intel/AMD machines : Typist-0.1.0-win.zip'
+Write-Host '  Snapdragon / ARM   : Typist-0.1.0-arm64-win.zip'

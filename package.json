@@ -5,15 +5,15 @@
   "description": "Push-to-talk dictation: hold a hotkey, speak, get text pasted at the cursor",
   "main": "electron/main.js",
   "scripts": {
-    "build": "npm run check && tsc && vite build",
-    "check": "node scripts/check-main.js",
+    "build": "node scripts/check-syntax.js && tsc && vite build",
+    "check": "node scripts/check-syntax.js",
     "start": "electron .",
     "vite": "vite",
     "package": "npm run build && electron-builder --win --arm64",
     "package:x64": "npm run build && electron-builder --win --x64",
     "package:trial": "npm run build && npm run package:trial:x64 && npm run package:trial:arm64",
-    "package:trial:x64": "electron-builder --win --x64 --config.win.requestedExecutionLevel=asInvoker",
-    "package:trial:arm64": "electron-builder --win --arm64 --config.win.requestedExecutionLevel=asInvoker"
+    "package:trial:x64": "electron-builder --win zip --x64 --config.win.requestedExecutionLevel=asInvoker",
+    "package:trial:arm64": "electron-builder --win zip --arm64 --config.win.requestedExecutionLevel=asInvoker"
   },
   "devDependencies": {
     "electron": "^44.2.0",

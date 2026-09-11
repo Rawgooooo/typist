@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld("typist", {
 
   listMicrophones: () => ipcRenderer.invoke("microphones:list"),
 
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggle-maximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  isWindowMaximized: () => ipcRenderer.invoke("window:is-maximized"),
+
   getCloudModels: () => ipcRenderer.invoke("cloud:models"),
   getDataDir: () => ipcRenderer.invoke("paths:dataDir"),
 
@@ -50,6 +55,11 @@ contextBridge.exposeInMainWorld("typist", {
     const handler = (_e, message) => cb(message);
     ipcRenderer.on("typist-error", handler);
     return () => ipcRenderer.removeListener("typist-error", handler);
+  },
+  onWindowMaximized: (cb) => {
+    const handler = (_e, isMaximized) => cb(isMaximized);
+    ipcRenderer.on("window-maximized", handler);
+    return () => ipcRenderer.removeListener("window-maximized", handler);
   },
   onCaptureCommand: (cb) => {
     const handler = (_e, payload) => cb(payload);

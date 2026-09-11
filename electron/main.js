@@ -39,20 +39,35 @@ const DIST = path.join(__dirname, "..", "dist");
  * to diagnose: the process just disappears. Falls back to the temp directory
  * because this can run before the data directory is known to be writable.
  */
-function logStartupError(message) {
-  const line = `[${new Date().toISOString()}] ${message}\n`;
-  console.error(`[Typist] ${message}`);
+function writeLog(level, message) {
+  const line = `[${new Date().toISOString()}] ${level} ${message}\n`;
 
   for (const dir of [safeAppDir(), os.tmpdir()]) {
     if (!dir) continue;
     try {
       fs.mkdirSync(dir, { recursive: true });
-      fs.appendFileSync(path.join(dir, "startup.log"), line, "utf8");
+      fs.appendFileSync(path.join(dir, "typist.log"), line, "utf8");
       return;
     } catch {
       // Try the next location.
     }
   }
+}
+
+/**
+ * Traces lifecycle milestones to disk.
+ *
+ * Kept permanently rather than used once: a packaged GUI app has no console, so
+ * without this a startup failure on someone else's machine is undiagnosable.
+ */
+function logEvent(message) {
+  console.log(`[Typist] ${message}`);
+  writeLog("INFO ", message);
+}
+
+function logStartupError(message) {
+  console.error(`[Typist] ${message}`);
+  writeLog("ERROR", message);
 }
 
 function safeAppDir() {
@@ -77,6 +92,44 @@ process.on("unhandledRejection", (reason) => {
 let mainWindow = null;
 let overlayWindow = null;
 let recorderWindow = null;
+
+/** Guards against re-entering shutdown from several paths at once. */
+let isQuitting = false;
+
+/**
+ * Destroys the always-open background windows.
+ *
+ * `destroy()` rather than `close()`: close is cancellable and fires the normal
+ * lifecycle, which during shutdown can leave a window alive and hold the process
+ * open with no visible UI.
+ */
+function destroyBackgroundWindows() {
+  for (const win of [overlayWindow, recorderWindow]) {
+    if (win && !win.isDestroyed()) win.destroy();
+  }
+  overlayWindow = null;
+  recorderWindow = null;
+}
+
+/**
+ * Shuts the app down completely, so no process is left behind in Task Manager.
+ */
+function quitApp() {
+  if (isQuitting) return;
+  isQuitting = true;
+
+  logEvent("quitApp: tearing down");
+  cancelPtt();
+
+  try {
+    globalShortcut.unregisterAll();
+  } catch {
+    // Nothing registered, or already torn down.
+  }
+
+  destroyBackgroundWindows();
+  app.quit();
+}
 
 let settings = settingsStore.DEFAULTS;
 let activeHotkey = settingsStore.DEFAULT_HOTKEY;
@@ -142,18 +195,25 @@ function loadRenderer(win, file) {
     : win.loadFile(path.join(DIST, file));
 
   return done.catch((e) => {
+    // Tearing down a window that is still loading aborts the load. That is
+    // expected during shutdown and must not be reported as a failure, or the log
+    // ends with an alarming ERR_FAILED that looks like the cause of the exit.
+    if (isQuitting) return;
     logStartupError(`Failed to load ${file}: ${e.message}`);
   });
 }
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 900,
-    height: 600,
-    minWidth: 700,
-    minHeight: 500,
+    width: 940,
+    height: 620,
+    minWidth: 720,
+    minHeight: 520,
     title: "Typist",
-    backgroundColor: "#09090b",
+    // The OS chrome is replaced by the in-app title bar in index.html, so the
+    // window is frameless. Frameless windows stay edge-resizable on Windows.
+    frame: false,
+    backgroundColor: "#000000",
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -165,16 +225,50 @@ function createMainWindow() {
 
   void loadRenderer(mainWindow, "index.html");
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    logEvent("main window ready-to-show");
+    mainWindow.show();
+  });
+
+  mainWindow.webContents.on("render-process-gone", (_e, details) => {
+    logStartupError(`main renderer gone: ${JSON.stringify(details)}`);
+  });
+
+  mainWindow.webContents.on("did-finish-load", () => logEvent("main window did-finish-load"));
+
+  // The window can be maximized by double-clicking the drag strip or by Windows
+  // snap, neither of which routes through the IPC handler, so the glyph is kept
+  // in sync from the window's own events.
+  const sendMaximized = (isMaximized) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("window-maximized", isMaximized);
+    }
+  };
+  mainWindow.on("maximize", () => sendMaximized(true));
+  mainWindow.on("unmaximize", () => sendMaximized(false));
+
+  // Closing the settings window quits the whole app.
+  //
+  // The recorder and overlay windows are always open, so `window-all-closed`
+  // never fired and the process stayed alive headlessly. Relaunching then hit the
+  // single-instance lock, the new instance exited, and the survivor had no main
+  // window left to show — the app became unlaunchable until killed from Task
+  // Manager.
+  //
+  // Tradeoff: the global hotkey only works while Typist is open. Keeping it alive
+  // in the background would need a tray icon so there is a visible way to quit
+  // and reopen it.
+  mainWindow.on("closed", () => {
+    logEvent("main window closed -> quitting app");
+    mainWindow = null;
+    quitApp();
+  });
 
   // If the document fails to load, ready-to-show never fires and the app would
   // sit invisible with no explanation. Show it anyway so the failure is visible.
   mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
     logStartupError(`did-fail-load ${code} ${desc} ${url}`);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
-  });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
   });
 }
 
@@ -489,19 +583,52 @@ function registerIpc() {
 
   ipcMain.handle("cloud:models", () => transcribeLib.CLOUD_MODELS);
   ipcMain.handle("paths:dataDir", () => settingsStore.appDir());
+
+  // Window chrome. The frameless window has no OS buttons, so the renderer's
+  // title bar drives these.
+  ipcMain.handle("window:minimize", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize();
+  });
+
+  ipcMain.handle("window:toggle-maximize", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
+    return mainWindow.isMaximized();
+  });
+
+  ipcMain.handle("window:close", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+  });
+
+  ipcMain.handle("window:is-maximized", () =>
+    Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMaximized())
+  );
 }
 
 // ── Startup ─────────────────────────────────────────────
 
+logEvent(`main.js loaded (packaged=${app.isPackaged}, dev=${IS_DEV})`);
+
 // A second instance would fight over the global hotkey and the config file.
 if (!app.requestSingleInstanceLock()) {
+  logEvent("another instance already holds the lock; exiting");
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.show();
-      mainWindow.focus();
+    logEvent("second instance launched; surfacing existing window");
+
+    // Recreate rather than only focusing. If the main window is gone but the
+    // process is somehow still alive, focusing a destroyed window would silently
+    // do nothing and the app would look broken.
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      createMainWindow();
+      return;
     }
+
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
   });
 
   app.whenReady().then(() => {
@@ -525,21 +652,38 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === "media");
 
     registerIpc();
-    createRecorderWindow();
-    createOverlayWindow();
-    createMainWindow();
-    registerHotkey();
+    logEvent("ipc registered");
 
+    createRecorderWindow();
+    logEvent("recorder window created");
+
+    createOverlayWindow();
+    logEvent("overlay window created");
+
+    createMainWindow();
+    logEvent("main window created");
+
+    registerHotkey();
     setState("ready");
+    logEvent("startup complete");
   });
 
   app.on("window-all-closed", () => {
-    // The recorder and overlay are always open, so this only fires on real quit.
-    app.quit();
+    logEvent("window-all-closed fired");
+    quitApp();
+  });
+
+  app.on("before-quit", () => {
+    isQuitting = true;
+    logEvent("before-quit");
   });
 
   app.on("will-quit", () => {
+    logEvent("will-quit");
     cancelPtt();
     globalShortcut.unregisterAll();
+    destroyBackgroundWindows();
   });
+
+  app.on("quit", (_e, code) => logEvent(`quit (exit code ${code})`));
 }

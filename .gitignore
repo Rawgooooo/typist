@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 release/
+release.zip
+tmp-asar/
 
 # App data: config.json holds the API key, plus whisper models and history
 data/

@@ -41,6 +41,10 @@ const hotkeyText = document.getElementById("hotkey-text")!;
 const errorBanner = document.getElementById("error-banner")!;
 const errorText = document.getElementById("error-text")!;
 const errorDismiss = document.getElementById("error-dismiss")!;
+const appRoot = document.getElementById("app")!;
+const winMin = document.getElementById("win-min") as HTMLButtonElement;
+const winMax = document.getElementById("win-max") as HTMLButtonElement;
+const winClose = document.getElementById("win-close") as HTMLButtonElement;
 
 type Platform = "windows" | "macos" | "other";
 
@@ -92,17 +96,53 @@ function errorMessage(e: unknown): string {
 
 errorDismiss.addEventListener("click", hideError);
 
+// ── Window chrome ─────────────────────────────────────
+// The window is frameless, so minimise/maximise/close live in the app's own
+// title bar and are driven over IPC.
+
+function setMaximized(isMaximized: boolean) {
+  appRoot.classList.toggle("maximized", isMaximized);
+  winMax.setAttribute("aria-label", isMaximized ? "Restore" : "Maximize");
+}
+
+winMin.addEventListener("click", () => void api.minimizeWindow());
+winMax.addEventListener("click", async () => setMaximized(await api.toggleMaximizeWindow()));
+winClose.addEventListener("click", () => void api.closeWindow());
+
+// Double-clicking the drag strip maximises, matching the OS title bar it
+// replaced. The buttons sit outside this element, so they are not affected.
+document.querySelector(".tb-drag")?.addEventListener("dblclick", async () => {
+  setMaximized(await api.toggleMaximizeWindow());
+});
+
+api.onWindowMaximized(setMaximized);
+api.isWindowMaximized().then(setMaximized).catch(() => {
+  // Cosmetic only: the glyph just keeps its default until the next change.
+});
+
 // Section navigation
 const navItems = document.querySelectorAll(".nav-item");
 const sections = document.querySelectorAll(".content-section");
 
 navItems.forEach((item) => {
-  item.addEventListener("click", () => {
+  const select = () => {
     const target = item.getAttribute("data-section");
     navItems.forEach((n) => n.classList.remove("active"));
     sections.forEach((s) => s.classList.remove("active"));
     item.classList.add("active");
     document.getElementById(`section-${target}`)?.classList.add("active");
+  };
+
+  item.addEventListener("click", select);
+
+  // The rail auto-expands on focus, so it can be driven from the keyboard; the
+  // nav entries are anchors without an href and need their own key handling.
+  item.addEventListener("keydown", (e) => {
+    const key = (e as KeyboardEvent).key;
+    if (key === "Enter" || key === " ") {
+      e.preventDefault();
+      select();
+    }
   });
 });
 

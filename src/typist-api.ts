@@ -65,6 +65,11 @@ export interface TypistApi {
 
   listMicrophones(): Promise<MicDevice[]>;
 
+  minimizeWindow(): Promise<void>;
+  toggleMaximizeWindow(): Promise<boolean>;
+  closeWindow(): Promise<void>;
+  isWindowMaximized(): Promise<boolean>;
+
   getCloudModels(): Promise<Record<string, CloudModel>>;
   getDataDir(): Promise<string>;
 
@@ -77,5 +82,6 @@ export interface TypistApi {
   onRecordingState(cb: (state: RecordingState) => void): () => void;
   onDownloadProgress(cb: (progress: DownloadProgress) => void): () => void;
   onError(cb: (message: string) => void): () => void;
+  onWindowMaximized(cb: (isMaximized: boolean) => void): () => void;
   onCaptureCommand(cb: (payload: CaptureCommand) => void): () => void;
 }
