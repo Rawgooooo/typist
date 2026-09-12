@@ -203,6 +203,35 @@ Testers supply their own Groq key through the UI. Collected corpora arrive as
 `typist-corpus-<name>-<date>.json`: transcription text, timestamps, engine and
 model only. No audio is recorded at any point, and keys never enter the export.
 
+### Publishing
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\publish-release.ps1
+```
+
+Uploads the ZIPs and `READ-ME-FIRST.txt` as GitHub Release assets, tagged from the
+`version` in `package.json`. Re-running replaces the assets on an existing tag.
+
+**Never commit `release/`.** GitHub hard-rejects any file over 100 MB, and
+`Typist.exe` is ~216 MB with each ZIP around 145 MB — committing them makes every
+push fail with no way to retry past it. Release assets allow 2 GB each. `release/`
+is gitignored; keeping it that way holds the repo at roughly 0.4 MB instead of
+757 MB.
+
+Git LFS is the only way to keep binaries in the repo itself, and GitHub's free
+tier is 1 GB of storage and 1 GB/month of bandwidth — about three builds before it
+runs out.
+
+## Scripts
+
+| Script | Purpose |
+|---|---|
+| `make-trial.ps1` | Builds both portable ZIPs and the tester instructions |
+| `publish-release.ps1` | Uploads them as GitHub Release assets |
+| `install-autostart.ps1` | Registers the elevated logon task; `-Uninstall` removes it |
+| `verify-lifecycle.ps1` | Asserts closing the window fully exits, and relaunch works |
+| `check-syntax.js` | Parses every main-process file; runs inside `npm run build` |
+
 ## Limitations
 
 - Paste cannot reach Windows' secure desktop (UAC dialog, lock screen,
