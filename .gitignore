@@ -3,9 +3,14 @@ node_modules/
 
 # Build output
 dist/
-release/
 release.zip
 tmp-asar/
+
+# Packaged builds. Never commit these: Typist.exe is ~216 MB and the zips are
+# ~145 MB each, all past GitHub's hard 100 MB per-file limit, which makes the
+# push fail outright. Distribute them as GitHub Release assets instead
+# (2 GB per file) — see "Distributing for a trial" in README.md.
+release/
 
 # App data: config.json holds the API key, plus whisper models and history
 data/
