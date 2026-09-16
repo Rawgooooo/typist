@@ -18,6 +18,13 @@ export interface CloudModel {
   wer: number;
 }
 
+export interface HotkeyResult {
+  ok: boolean;
+  /** The binding actually in force afterwards; null if none could be registered. */
+  hotkey: string | null;
+  error?: string;
+}
+
 export interface HistoryEntry {
   at: string;
   engine: string;
@@ -69,6 +76,11 @@ export interface TypistApi {
   toggleMaximizeWindow(): Promise<boolean>;
   closeWindow(): Promise<void>;
   isWindowMaximized(): Promise<boolean>;
+
+  setHotkey(accelerator: string): Promise<HotkeyResult>;
+  resetHotkey(): Promise<HotkeyResult>;
+  suspendHotkey(): Promise<void>;
+  resumeHotkey(): Promise<string | null>;
 
   getCloudModels(): Promise<Record<string, CloudModel>>;
   getDataDir(): Promise<string>;

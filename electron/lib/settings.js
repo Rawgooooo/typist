@@ -106,7 +106,7 @@ function configPath() {
  */
 function parseEnv(contents) {
   const out = {};
-  for (const rawLine of contents.split(/\r?\n/)) {
+  for (const rawLine of stripBom(String(contents)).split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
 
@@ -171,14 +171,33 @@ function groqKeyFromEnv() {
   return nonEmptyEnv("TYPIST_GROQ_API_KEY") || nonEmptyEnv("GROQ_API_KEY");
 }
 
+/**
+ * Strips a UTF-8 byte order mark.
+ *
+ * `JSON.parse` rejects a leading BOM, and plenty of Windows tools add one —
+ * PowerShell 5.1's `Set-Content -Encoding utf8` and Notepad's "UTF-8 with BOM"
+ * among them. Without this, hand-editing config.json in the wrong editor makes the
+ * file silently unreadable and every setting resets to its default.
+ */
+function stripBom(text) {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
 function load() {
   let stored = {};
   let existed = false;
 
   try {
-    stored = JSON.parse(fs.readFileSync(configPath(), "utf8"));
+    const raw = stripBom(fs.readFileSync(configPath(), "utf8"));
+    stored = JSON.parse(raw);
     existed = true;
-  } catch {
+  } catch (e) {
+    // A missing file is normal on first run. Anything else means the file exists
+    // but could not be parsed, which is worth surfacing rather than silently
+    // resetting the user's settings.
+    if (e && e.code !== "ENOENT") {
+      console.error(`[Typist] Could not read config.json (${e.message}); using defaults`);
+    }
     stored = {};
   }
 

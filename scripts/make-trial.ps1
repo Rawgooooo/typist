@@ -14,6 +14,17 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
+# Clear stale artifacts first. Without this the folder accumulates output from
+# earlier attempts — a discarded NSIS installer and an unpacked staging tree were
+# left behind once, and it is far too easy to hand a tester the wrong file.
+$releaseDirPre = Join-Path $repo 'release'
+if (Test-Path $releaseDirPre) {
+    Get-Process Typist -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 1
+    Write-Host '=== Clearing previous build output ==='
+    Remove-Item -Recurse -Force $releaseDirPre -ErrorAction Continue
+}
+
 Write-Host '=== Building portable trial builds (x64 + arm64, no elevation) ==='
 npm run package:trial
 if ($LASTEXITCODE -ne 0) { throw "electron-builder failed with exit code $LASTEXITCODE" }

@@ -473,37 +473,91 @@ async function onHotkey() {
 
 // ── Hotkey registration ─────────────────────────────────
 
+/**
+ * Registers a single accelerator.
+ *
+ * Electron throws on a malformed accelerator rather than returning false, so both
+ * outcomes are normalised to a boolean.
+ */
+function tryRegisterHotkey(accelerator) {
+  try {
+    return globalShortcut.register(accelerator, onHotkey);
+  } catch (e) {
+    logStartupError(`Invalid accelerator '${accelerator}': ${e.message}`);
+    return false;
+  }
+}
+
 function registerHotkey() {
   globalShortcut.unregisterAll();
 
   const desired = settings.hotkey || settingsStore.DEFAULT_HOTKEY;
 
-  const tryRegister = (accelerator) => {
-    try {
-      return globalShortcut.register(accelerator, onHotkey);
-    } catch (e) {
-      console.error(`[Typist] Invalid accelerator '${accelerator}': ${e.message}`);
-      return false;
-    }
-  };
-
-  if (tryRegister(desired)) {
+  if (tryRegisterHotkey(desired)) {
     activeHotkey = desired;
-    console.log(`[Typist] Global shortcut registered: ${desired}`);
-    return;
+    logEvent(`Global shortcut registered: ${desired}`);
+    return true;
   }
 
-  console.error(`[Typist] Failed to register '${desired}' (another app may own it)`);
+  logStartupError(`Failed to register '${desired}' (another app may own it)`);
 
-  if (desired !== settingsStore.FALLBACK_HOTKEY && tryRegister(settingsStore.FALLBACK_HOTKEY)) {
+  if (desired !== settingsStore.FALLBACK_HOTKEY && tryRegisterHotkey(settingsStore.FALLBACK_HOTKEY)) {
     activeHotkey = settingsStore.FALLBACK_HOTKEY;
-    settings.hotkey = settingsStore.FALLBACK_HOTKEY;
-    console.log(`[Typist] Fell back to ${settingsStore.FALLBACK_HOTKEY}`);
-    reportError(`Hotkey '${desired}' was unavailable; using ${settingsStore.FALLBACK_HOTKEY} instead.`);
-    return;
+    settings = settingsStore.save({ ...settings, hotkey: settingsStore.FALLBACK_HOTKEY });
+    logEvent(`Fell back to ${settingsStore.FALLBACK_HOTKEY}`);
+    reportError(
+      `Hotkey '${desired}' was unavailable; using ${settingsStore.FALLBACK_HOTKEY} instead.`
+    );
+    return true;
   }
 
-  reportError("No global hotkey could be registered. Use the button in the app to record.");
+  activeHotkey = null;
+  reportError("No global hotkey could be registered. Use the Record button in the app.");
+  return false;
+}
+
+/**
+ * Applies an accelerator chosen in the settings UI.
+ *
+ * If the new binding cannot be registered — almost always because another
+ * application already owns it — the previous one is restored, so a failed rebind
+ * never leaves the user with no working hotkey.
+ */
+function applyHotkey(accelerator) {
+  const previous = activeHotkey;
+
+  globalShortcut.unregisterAll();
+
+  if (tryRegisterHotkey(accelerator)) {
+    activeHotkey = accelerator;
+    settings = settingsStore.save({ ...settings, hotkey: accelerator });
+    logEvent(`Hotkey rebound to ${accelerator}`);
+    return { ok: true, hotkey: accelerator };
+  }
+
+  const restored = previous ? tryRegisterHotkey(previous) : false;
+  if (restored) activeHotkey = previous;
+
+  logStartupError(`Rebind to '${accelerator}' failed; restored=${restored}`);
+
+  return {
+    ok: false,
+    hotkey: activeHotkey,
+    error:
+      `'${accelerator}' could not be registered — another application is probably using it.` +
+      (restored ? ` Kept ${previous}.` : " No hotkey is active."),
+  };
+}
+
+/**
+ * Releases the global hotkey while the UI captures a new one.
+ *
+ * Without this, pressing the current combination during capture would fire the
+ * shortcut and start a recording instead of being recorded as the new binding.
+ */
+function suspendHotkey() {
+  globalShortcut.unregisterAll();
+  logEvent("hotkey suspended for capture");
 }
 
 // ── IPC ─────────────────────────────────────────────────
@@ -512,10 +566,30 @@ function registerIpc() {
   ipcMain.handle("settings:get", () => settings);
 
   ipcMain.handle("settings:save", (_e, incoming) => {
-    const hotkeyChanged = incoming?.hotkey && incoming.hotkey !== settings.hotkey;
-    settings = settingsStore.save({ ...settings, ...incoming });
-    if (hotkeyChanged) registerHotkey();
+    // The hotkey is deliberately ignored here. It is owned by hotkey:set, which
+    // validates the accelerator against the OS and can revert. Letting a generic
+    // settings save also write it would allow an unregistrable binding to be
+    // persisted when some unrelated field changed.
+    const merged = { ...settings, ...incoming, hotkey: settings.hotkey };
+    settings = settingsStore.save(merged);
     return settings;
+  });
+
+  ipcMain.handle("hotkey:set", (_e, accelerator) => {
+    const acc = String(accelerator || "").trim();
+    if (!acc) throw new Error("No hotkey provided");
+    return applyHotkey(acc);
+  });
+
+  ipcMain.handle("hotkey:reset", () => applyHotkey(settingsStore.DEFAULT_HOTKEY));
+
+  ipcMain.handle("hotkey:suspend", () => {
+    suspendHotkey();
+  });
+
+  ipcMain.handle("hotkey:resume", () => {
+    registerHotkey();
+    return activeHotkey;
   });
 
   ipcMain.handle("model:check", (_e, modelSize) => transcribeLib.isModelDownloaded(modelSize));

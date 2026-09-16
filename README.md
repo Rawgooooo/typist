@@ -25,7 +25,10 @@ npm run build
 npm start
 ```
 
-Default hotkey **Ctrl+Shift+D**. Press to start, press again to stop.
+Default hotkey **Ctrl+Shift+D**. Press to start, press again to stop. Rebind it in
+the Recording tab: **Change**, then press the combination you want. If it is
+already taken by another application the previous binding is kept rather than
+leaving you with none.
 
 ## Package
 
@@ -67,8 +70,13 @@ data/whisper/          whisper.cpp runtime
 For a packaged build this is beside the executable. Override with
 `TYPIST_DATA_DIR` if you want it elsewhere. `data/` is gitignored.
 
-Most options are in the UI. `hotkey` is display-only and must be edited in
-`config.json`.
+Every option is editable in the UI, including the hotkey — Recording tab, then
+**Change**.
+
+Editing `config.json` by hand works too, but save it as UTF-8 **without** a BOM.
+`JSON.parse` rejects a leading BOM, and PowerShell's `Set-Content -Encoding utf8`
+and Notepad's "UTF-8 with BOM" both add one. A BOM is tolerated now (it is
+stripped on read) and an unparseable file is logged rather than silently ignored.
 
 `.env` is read from the working directory, its parent, next to the executable,
 and finally `data/.env`. Anything saved through the UI takes precedence over the
@@ -230,6 +238,7 @@ runs out.
 | `publish-release.ps1` | Uploads them as GitHub Release assets |
 | `install-autostart.ps1` | Registers the elevated logon task; `-Uninstall` removes it |
 | `verify-lifecycle.ps1` | Asserts closing the window fully exits, and relaunch works |
+| `verify-hotkey.ps1` | Asserts custom bindings register and bad ones fall back |
 | `check-syntax.js` | Parses every main-process file; runs inside `npm run build` |
 
 ## Limitations

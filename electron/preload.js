@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld("typist", {
   closeWindow: () => ipcRenderer.invoke("window:close"),
   isWindowMaximized: () => ipcRenderer.invoke("window:is-maximized"),
 
+  setHotkey: (accelerator) => ipcRenderer.invoke("hotkey:set", accelerator),
+  resetHotkey: () => ipcRenderer.invoke("hotkey:reset"),
+  suspendHotkey: () => ipcRenderer.invoke("hotkey:suspend"),
+  resumeHotkey: () => ipcRenderer.invoke("hotkey:resume"),
+
   getCloudModels: () => ipcRenderer.invoke("cloud:models"),
   getDataDir: () => ipcRenderer.invoke("paths:dataDir"),
 

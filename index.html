@@ -252,10 +252,14 @@
               <div class="setting-row">
                 <div class="setting-label">
                   <span class="label-text">Hotkey</span>
-                  <span class="label-hint">Global keyboard shortcut to trigger recording</span>
+                  <span class="label-hint" id="hotkey-hint">Global shortcut to start and stop recording</span>
                 </div>
                 <div class="setting-control">
-                  <kbd id="hotkey-text">Ctrl+Shift+D</kbd>
+                  <div class="hotkey-row">
+                    <kbd id="hotkey-text" aria-live="polite">Ctrl+Shift+D</kbd>
+                    <button id="hotkey-change" class="btn-primary">Change</button>
+                    <button id="hotkey-reset" class="btn-secondary">Reset</button>
+                  </div>
                 </div>
               </div>
             </div>

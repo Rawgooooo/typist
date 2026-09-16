@@ -38,6 +38,9 @@ const historyPathHint = document.getElementById("history-path-hint")!;
 const modeToggle = document.getElementById("mode-toggle")!;
 const modePtt = document.getElementById("mode-ptt")!;
 const hotkeyText = document.getElementById("hotkey-text")!;
+const hotkeyHint = document.getElementById("hotkey-hint")!;
+const hotkeyChange = document.getElementById("hotkey-change") as HTMLButtonElement;
+const hotkeyReset = document.getElementById("hotkey-reset") as HTMLButtonElement;
 const errorBanner = document.getElementById("error-banner")!;
 const errorText = document.getElementById("error-text")!;
 const errorDismiss = document.getElementById("error-dismiss")!;
@@ -73,6 +76,163 @@ function formatHotkey(accelerator: string): string {
     : out.replace(/\bSuper\b/gi, "Win").replace(/\bMeta\b/gi, "Win");
 
   return out;
+}
+
+/* ── Hotkey rebinding ───────────────────────────────── */
+
+const DEFAULT_HOTKEY_HINT = "Global shortcut to start and stop recording";
+
+let capturingHotkey = false;
+
+/**
+ * Maps a key event to the Electron accelerator name for its main (non-modifier)
+ * key, or null if the event carries only modifiers.
+ *
+ * `event.code` is used rather than `event.key` because it identifies the physical
+ * key regardless of layout or which modifiers are held: Ctrl+Shift+2 reports
+ * `event.key` as "@" on a US layout, which is not a valid accelerator, while
+ * `code` stays "Digit2".
+ */
+function mainKeyFromEvent(e: KeyboardEvent): string | null {
+  const code = e.code;
+
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+
+  const named: Record<string, string> = {
+    Space: "Space",
+    Enter: "Enter",
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Insert: "Insert",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Minus: "-",
+    Equal: "=",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Semicolon: ";",
+    Quote: "'",
+    Backquote: "`",
+    Backslash: "\\",
+    Comma: ",",
+    Period: ".",
+    Slash: "/",
+  };
+
+  return named[code] ?? null;
+}
+
+function modifiersFromEvent(e: KeyboardEvent): string[] {
+  const mods: string[] = [];
+  if (e.ctrlKey) mods.push("Control");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  if (e.metaKey) mods.push(platform === "macos" ? "Command" : "Super");
+  return mods;
+}
+
+function setHotkeyDisplay(accelerator: string | null, state: "" | "capturing" | "invalid" = "") {
+  hotkeyText.textContent = accelerator ? formatHotkey(accelerator) : "none";
+  hotkeyText.className = state;
+}
+
+function stopCapture() {
+  if (!capturingHotkey) return;
+  capturingHotkey = false;
+
+  window.removeEventListener("keydown", onCaptureKeydown, true);
+  hotkeyChange.textContent = "Change";
+  hotkeyReset.disabled = false;
+  hotkeyHint.textContent = DEFAULT_HOTKEY_HINT;
+
+  setHotkeyDisplay(currentSettings.hotkey);
+
+  // The global shortcut was released for the duration of the capture.
+  void api.resumeHotkey();
+}
+
+async function commitHotkey(accelerator: string) {
+  try {
+    const result = await api.setHotkey(accelerator);
+
+    if (result.ok && result.hotkey) {
+      currentSettings.hotkey = result.hotkey;
+      capturingHotkey = false;
+      window.removeEventListener("keydown", onCaptureKeydown, true);
+      hotkeyChange.textContent = "Change";
+      hotkeyReset.disabled = false;
+      hotkeyHint.textContent = DEFAULT_HOTKEY_HINT;
+      setHotkeyDisplay(result.hotkey);
+      hideError();
+      return;
+    }
+
+    // Registration failed; the backend has already restored the old binding.
+    if (result.hotkey) currentSettings.hotkey = result.hotkey;
+    stopCapture();
+    showError(result.error ?? "That shortcut could not be registered.");
+  } catch (e) {
+    stopCapture();
+    showError(errorMessage(e));
+  }
+}
+
+function onCaptureKeydown(e: KeyboardEvent) {
+  // Swallow everything while capturing so the keys cannot also act on the UI.
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (e.key === "Escape") {
+    stopCapture();
+    return;
+  }
+
+  const mods = modifiersFromEvent(e);
+  const key = mainKeyFromEvent(e);
+
+  // Modifier-only press: show progress rather than an error, since the user is
+  // mid-combination.
+  if (!key) {
+    setHotkeyDisplay(mods.length ? `${mods.join("+")}+…` : "…", "capturing");
+    return;
+  }
+
+  if (mods.length === 0) {
+    setHotkeyDisplay(key, "invalid");
+    hotkeyHint.textContent =
+      "A global shortcut needs at least one modifier, otherwise it would swallow that key everywhere.";
+    return;
+  }
+
+  void commitHotkey([...mods, key].join("+"));
+}
+
+function startCapture() {
+  if (capturingHotkey) {
+    stopCapture();
+    return;
+  }
+
+  capturingHotkey = true;
+  hotkeyChange.textContent = "Cancel";
+  hotkeyReset.disabled = true;
+  hotkeyHint.textContent = "Press a combination now, or Escape to cancel.";
+  setHotkeyDisplay("…", "capturing");
+
+  // Release the current binding first, or pressing it during capture would fire
+  // the shortcut and start a recording instead of being recorded.
+  void api.suspendHotkey();
+
+  window.addEventListener("keydown", onCaptureKeydown, true);
 }
 
 function showError(message: string) {
@@ -167,7 +327,7 @@ async function loadSettings() {
   setRecordingMode(currentSettings.recordingMode);
   setSaveHistory(currentSettings.saveHistory !== false);
 
-  hotkeyText.textContent = formatHotkey(currentSettings.hotkey);
+  setHotkeyDisplay(currentSettings.hotkey);
 
   try {
     historyPathHint.textContent = `Appended to ${await api.getHistoryPath()}`;
@@ -453,6 +613,28 @@ runtimeBtn.addEventListener("click", async () => {
 });
 
 groqKey.addEventListener("change", () => saveSettings());
+
+hotkeyChange.addEventListener("click", () => startCapture());
+
+hotkeyReset.addEventListener("click", async () => {
+  hideError();
+  try {
+    const result = await api.resetHotkey();
+    if (result.hotkey) currentSettings.hotkey = result.hotkey;
+    setHotkeyDisplay(currentSettings.hotkey);
+    if (!result.ok) showError(result.error ?? "Could not restore the default shortcut.");
+  } catch (e) {
+    showError(errorMessage(e));
+  }
+});
+
+// Leaving the Recording section mid-capture would otherwise keep the key listener
+// attached with no visible indication.
+navItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    if (capturingHotkey) stopCapture();
+  });
+});
 
 cloudModelSelect.addEventListener("change", () => saveSettings());
 
